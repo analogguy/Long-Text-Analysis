@@ -1,0 +1,529 @@
+
+```{r}
+library(tidyverse)
+library(sqldf)
+library(tidytext)
+library(wordcloud)
+library(textdata) #for Afinn library
+library(topicmodels)
+
+```
+```{r}
+Sys.setenv(TZ= "Europe/Warsaw")
+Sys.getenv("TZ")
+#as.POSIXct(t, tz=getOption("TZ"))
+Data <- read.csv("Data_april.csv")
+Data_tibble <- read_csv("Data_april.csv",locale=locale(tz="Europe/Warsaw"))
+```
+
+```{r}
+Total_user = as.numeric(Data_tibble %>% 
+  filter(sentBy == "Consumer") %>%
+  count())
+
+sprintf("Total messages sent by consumer = %i",Total_user)
+```
+
+```{r}
+Total_agent = as.numeric(Data_tibble %>% 
+  filter(sentBy == "Agent") %>%
+  count())
+
+sprintf("Total messages sent by agent = %i",Total_agent)
+```
+```{r}
+TAB = as.numeric(Data_tibble %>% 
+  filter(sentBy == "Agent", escalation == "0") %>%
+  count())
+sprintf("Total messages sent by agent before escalation = %i",TAB)
+```
+```{r}
+TAA = as.numeric(Data_tibble %>% 
+  filter(sentBy == "Agent", escalation == "1") %>%
+  count())
+sprintf("Total messages sent by agent after escalation = %i",TAA)
+```
+
+```{r}
+TAB = as.numeric(Data_tibble %>% 
+  filter(sentBy == "Consumer", escalation == "0") %>%
+  count())
+sprintf("Total messages sent by consumer before escalation = %i",TAB)
+```
+
+```{r}
+TAA = as.numeric(Data_tibble %>% 
+  filter(sentBy == "Consumer", escalation == "1") %>%
+  count())
+sprintf("Total messages sent by consumer after escalation = %i",TAA)
+```
+
+```{r}
+#Average no. of msgs shared by agent per each unique conversation"
+
+Data_tibble %>% 
+  group_by(conversationId)%>%
+  filter(sentBy == "Agent") %>%
+  summarize(max_ranks = max(rank)) %>%
+  summarize(mean_avg = mean(max_ranks))
+
+
+```
+
+```{r}
+#Average no. of msgs shared by agent per each unique conversation before escalation was made"
+
+Data_tibble %>% 
+  group_by(conversationId)%>%
+  filter(sentBy == "Agent", escalation== "0") %>%
+  summarize(max_ranks = max(rank)) %>%
+  summarize(mean_avg = mean(max_ranks))
+
+
+```
+
+```{r}
+
+#as escalation = 1, ranks of messages where escalation was initially 0 will already be considered.
+#Average no. of msgs shared by agent per each unique conversation in which an escalation was made"
+
+Data_tibble %>% 
+  group_by(conversationId)%>% #To divide in unique conversations
+  filter(sentBy == "Agent", escalation== "1") %>%
+  summarize(max_ranks = max(rank)) %>%
+  summarize(mean_avg = mean(max_ranks))
+
+```
+
+```{r}
+#Average no. of msgs shared by consumer per each unique conversation in which an escalation was made"
+Data_tibble %>% 
+  group_by(conversationId)%>% #To divide in unique conversations
+  filter(sentBy == "Consumer", escalation== "1") %>%
+  summarize(max_ranks = max(rank)) %>% #In each conversation, find max rank- total msgs shared
+  summarize(mean_avg = mean(max_ranks)) #get average rank of all conversations
+
+
+```
+```{r}
+
+#Average no. of msgs shared by consumer per each unique conversation before escalation was made"
+Data_tibble %>% 
+  group_by(conversationId)%>% #To divide in unique conversations
+  filter(sentBy == "Consumer", escalation== "0") %>%
+  summarize(max_ranks = max(rank)) %>%
+  summarize(mean_avg = mean(max_ranks))
+
+
+```
+
+
+
+
+```{r}
+
+#Max number of msgs in any conversation before escalation was made
+Data_tibble %>%
+  group_by(sentBy) %>% filter(escalation == "0") %>%
+  summarize(x = max(rank))
+
+
+
+```
+```{r}
+
+#Max no of msgs shared in any conversation
+
+Data_tibble %>%
+  group_by(sentBy) %>% filter(escalation == "1") %>%
+  summarize(x = max(rank))
+
+
+```
+```{r}
+#Unique conversations in data
+
+def <- as.numeric(sqldf("select count(distinct(conversationId)) from Data_tibble"))
+def
+      
+
+```
+
+```{r}
+abc <- as.numeric(sqldf("select count(distinct(conversationId)) from Data_tibble where sentBy = 'Consumer' and escalation = '0' and totalCharacters>='150' and rank = '1'"))
+
+abc
+
+
+```
+```{r}
+cat("In total of", def , "conversations", (abc/def)*100, "% of conversations had a long input being typed in the very first message")
+```
+```{r}
+def2 <- as.numeric(sqldf("select count(distinct(conversationId)) from Data_tibble where  sentBy = 'Consumer' and totalCharacters>= 150 and escalation = 0 "))
+
+def2
+
+
+```
+```{r}
+cat("In total of", def2 , "out of", def,  "conversations- a long input was entered, and in", (abc/def2)*100, "% of those conversations it was the very first message")
+```
+```{r}
+#Total rows
+Data_tibble %>% summarize(Total_msgs = n())
+```
+```{r}
+#Let us tokenize and separate words of reviews
+
+Data_review <- Data_tibble %>% 
+  unnest_tokens(words, text)
+Data_review
+```
+
+```{r}
+# least used words in reviews
+Data_review %>% count(words) %>% arrange(n)
+```
+```{r}
+#Most used words in reviews
+Data_review %>% count(words) %>% arrange(desc(n))
+```
+
+```{r}
+#As we notice, most often used words are useless filler words, lets remove them
+
+Data_review2 <- Data_tibble %>% 
+  unnest_tokens(output = word, input = text) %>%  #don't know why but can only use output = word, no other name here
+  anti_join(stop_words)
+
+#Anti-join is opposite of join, it fishes out values of A that didn't match with B
+
+#Notice how number of rows reduce drastically
+Data_review2
+
+```
+```{r}
+#Most used imp words
+Data_review2 %>% count(word) %>% arrange(desc(n))
+```
+```{r}
+
+#least used imp words
+Data_review2 %>% count(word) %>% arrange(n)
+
+```
+```{r}
+#Most used imp words by consumer
+Data_review2 %>% filter(sentBy == 'Consumer') %>% count(word) %>% arrange(desc(n))
+```
+```{r}
+#Perfect, Most requested services can thus be guessed to be for internet, bills, phone, cable , tv etc
+
+#Lets say we want words that were used more than 900 times
+imp_words <- Data_review2 %>% filter(sentBy == 'Consumer') %>% count(word) %>% filter(n>900) %>% arrange(desc(n))
+imp_words
+```
+
+```{r}
+ggplot(imp_words, aes(x= word, y = n))+ geom_col() + ggtitle("Review word counts")
+```
+```{r}
+#To include more words, lets flip the coordinates
+
+Data_review2 <- Data_tibble %>% 
+  unnest_tokens(output = word, input = text) %>%  #text is from our file under column text
+                                                  #word is by default the output for unnest_tokens  
+  anti_join(stop_words)
+
+
+imp_words2 <- Data_review2 %>% filter(sentBy == 'Consumer') %>% count(word) %>% filter(n>700) %>% arrange(desc(n))
+imp_words2
+
+ggplot(imp_words2, aes(x= word, y = n))+ geom_col() + coord_flip() + ggtitle("Review word counts")
+```
+```{r}
+#Lets arrange in a readable sequence
+
+ggplot(imp_words2, aes(x= fct_reorder(word, n), y = n))+ geom_col() + coord_flip() + ggtitle("Review word counts")
+
+```
+```{r}
+
+stop_words
+#As we don't like a few words, we make custom stop words now
+custom_stop_words <- tribble(
+  ~word, ~lexicon, 
+  "service", "CUSTOM", 
+  "account", "CUSTOM")
+
+stop_words2 <- stop_words %>% 
+  bind_rows(custom_stop_words)
+stop_words2
+
+Data_review2 <- Data_tibble %>% 
+  unnest_tokens(output = word, input = text) %>%  #text is from our file under column text
+                                                  #word is by default the output for unnest_tokens  
+  anti_join(stop_words2)
+
+
+imp_words2 <- Data_review2 %>% filter(sentBy == 'Consumer') %>% count(word) %>% filter(n>700) %>% arrange(desc(n))
+imp_words2
+
+#Could also have used mutate
+#imp_words2 <- Data_review2 %>% filter(sentBy == 'Consumer') %>% count(word) %>% filter(n>700) %>% mutate(word2 = fct_reorder(word, n)) %>% arrange(desc(n))
+
+
+#fct_reorder is to reorder word column, acc to decreasing n when plotting graph too, as just arrange(desc) won't affect the order in graph plot using ggplot
+
+#ggplot(imp_words2, aes(x= word2, y = n))+ geom_col() + coord_flip() + ggtitle("Review word counts")
+
+```
+```{r}
+abc <- Data_review2 %>% group_by(sentBy) %>%
+  count(word) %>% filter(n>700) %>% arrange(desc(n)) %>% top_n(10,n) %>%
+  #Until here job is to find top 10 in both categories
+  ungroup()
+
+ggplot(abc, aes(word, n, fill = sentBy)) + geom_col() +
+  facet_wrap(~sentBy, scales = "free_y")+ # So plot 2 y axis separately
+  coord_flip()+ ggtitle("Top Word Counts by AGENT/USER")
+```
+```{r}
+#Using word cloud to show most used words
+
+Data_review2 <- Data_tibble %>% 
+  unnest_tokens(output = word, input = text) %>%    
+  anti_join(stop_words2)
+
+abc <- Data_review2 %>% filter(sentBy == "Consumer") %>% count(word) %>% arrange(desc(n))
+abc
+
+wordcloud(
+  words = abc$word, 
+  freq = abc$n,
+  max.words = 20, 
+  colors = "red"
+)
+
+```
+```{r}
+
+#For sentiment analysis, let's get some of saved ones
+get_sentiments("bing")
+
+#So we see more negative words than positive
+get_sentiments("bing") %>% count(sentiment)
+
+```
+```{r}
+
+options(readr.default_locale=readr::locale(tz="Europe/Warsaw"))
+get_sentiments("afinn")
+
+
+get_sentiments("afinn") %>% 
+  summarize(
+   min = min(value),
+    max=max(value)
+    
+  )
+
+
+#This shows that afinn has emotions ranging from value -5 to +5
+
+#sentiment_counts <- get_sentiments("loughran") %>% 
+ #count(sentiment) %>%
+ #mutate(sentiment2 = fct_reorder(sentiment, n))
+
+
+#ggplot(sentiment_counts, aes(x= sentiment2, y = n))+
+#geom_col() +
+  #coord_flip() +
+  #labs(
+    #title ="Sentiment Counts",
+    #x ="Counts",
+    #y ="Sentiment"
+  #)
+
+```
+
+```{r}
+#install.Rtools(TRUE, FALSE, page_with_download_url = "https://cran.r-project.org/bin/windows/Rtools/")
+#inst
+#Sys.setenv(TZ = "Europe/Warsaw")
+
+
+#Add this line to install and get over the TZ issue
+options(readr.default_locale=readr::locale(tz="Europe/Warsaw"))
+get_sentiments("nrc")
+
+get_sentiments("nrc") %>%
+  count(sentiment) %>% 
+  arrange(desc(n))
+
+```
+
+```{r}
+#Join to keep all rows where match was found
+sentiment_review <- Data_review2 %>% inner_join(get_sentiments("bing"))
+sentiment_review
+
+sentiment_review %>% count(sentiment)
+
+#Wow, that's nice..Not so many negative words and more of positive ones
+
+```
+```{r}
+#Let's see which words are most used for a particular sentiment
+abc = sentiment_review %>% count(word, sentiment) %>% arrange(desc(n)) %>% group_by(sentiment) %>% top_n(10, n) %>% ungroup() %>% mutate(word2 = fct_reorder(word, n))
+
+#Notice how top_n is used after grouping by sentiment..so as to group first and then find top 10
+
+ggplot(abc, aes(word2, n, fill = sentiment))+ geom_col()+  coord_flip() +labs(x ="Words", y ="Freq")
+
+```
+```{r}
+#Let's see which words are most used for a particular sentiment
+abc = sentiment_review %>% count(word, sentiment) %>% arrange(desc(n)) %>% group_by(sentiment) %>% top_n(10, n) %>% mutate(word2 = fct_reorder(word, n))
+
+#Notice how top_n is used after grouping by sentiment..so as to group first and then find top 10
+
+ggplot(abc, aes(word2, n, fill = sentiment))+ geom_col()+  coord_flip() +labs(x ="Words", y ="Freq")
+
+```
+```{r}
+
+ggplot(abc, aes(word2, n, fill = sentiment))+ geom_col(show.legend = FALSE)+ facet_wrap(~sentiment, scales = "free") + coord_flip() +labs(x ="Words", y ="Freq")
+
+
+```
+```{r}
+#How many negative and positive messages were shared before and after escalation
+
+ Data_review2 %>% inner_join(get_sentiments("bing")) %>%  count(escalation, sentiment)
+
+```
+```{r}
+#Using spread, we can spread sentiment column into 2- positive and negative, based on n, that comes from count of rank
+
+Z = Data_review2 %>% inner_join(get_sentiments("bing")) %>%  count(rank, sentiment) %>% 
+  spread(sentiment, n)
+
+Z %>% filter(rank == "1") 
+
+#Z %>% filter(is.na == FALSE) %>% summarise(sum = sum(Z$negative))
+Z %>% mutate(overall_sentiment = positive - negative)
+
+
+
+```
+```{r}
+total_neg = as.numeric(Data_review2 %>% inner_join(get_sentiments("bing")) %>%  filter( sentiment == "negative") %>% count())
+
+total_neg
+
+
+#This shows that a lot of negative words are being used in the very first message
+cat("Infact out of ", total_neg, "negative reviews, ", (2722/total_neg)*100 , " % were entered in the very first message")
+
+```
+```{r}
+OS1 = as.numeric(Data_review2 %>% inner_join(get_sentiments("bing")) %>%  count(rank, sentiment) %>% 
+  spread(sentiment, n) %>%  mutate(overall_sentiment = positive - negative)  %>% summarise(OS = sum(!is.na(overall_sentiment))))
+
+OS2 = as.numeric(Data_review2 %>% inner_join(get_sentiments("bing")) %>%  count(rank, sentiment) %>% 
+  spread(sentiment, n) %>%  mutate(overall_sentiment = positive - negative)  %>% summarise(OS = mean(!is.na(overall_sentiment))))
+
+
+cat("Overall sentiment rating for consumers' requests can be termed across all ranks as (if summed) +", OS1, "or if averaged", OS2)
+```
+#Clustering
+#Unsupervised learning
+#Topic Modeling
+
+
+```{r}
+
+#Latent Dirischlet allocation
+#LDA Topic modeling
+#each topic is a collection of word probabilities for all of the unique words used in the corpus.
+
+
+```
+```{r}
+
+#install.packages("tm")
+#First step - Tokenize reviews to separate it word by word
+Data_review2 <- Data_tibble %>% filter(sentBy == "Consumer") %>%
+  unnest_tokens(output = word, input = text) %>%    
+  anti_join(stop_words2) 
+
+Data_review2 %>% count(word, conversationId) %>% cast_dtm(conversationId, word, n)
+
+#Let us understand what happened here
+#First we specify the document column, ie conversationId then,the term column ie word, last word counts, n to cast our tibble into a dtm.
+#Sequence is imp
+#cast into dtm basing on ID, tokenized words and count
+
+#Output saysm 4876 reviewsm 17543 words 
+```
+```{r}
+#Let us save our dtm as matrix, and access data as it will be a huge matrix,
+
+dtm_review <- Data_review2 %>% count(word, conversationId) %>% 
+  cast_dtm(conversationId, word, n) %>% as.matrix()
+
+#check 1st row, and 4th word ( rows are conversation ids or documents and columns are unique words)
+
+dtm_review[1,4]
+#Gives meaningless output, so lets see multiple rows and words
+dtm_review[1:4, 2000:2004]
+
+dtm_review[1:4, 9000:9004]
+
+#^ so we see that in first 4 conversations how many times these words (9000-9004) appeared.
+#As many are 0, it means they appeared sparsely, but word email appeared 5 times in the 1st conversation
+```
+
+```{r}
+lda_out <- LDA(
+  dtm_review, k = 4, method = "Gibbs", control=list(seed=42)
+)
+
+lda_out
+glimpse(lda_out)
+
+#as not much can be inferred this way, lets convert it to tidy
+```
+
+```{r}
+#install.packages("reshape2")
+
+#This step is done to cast it into dtm and then tidy it up for better readability,
+
+#take out as a matrix, the beta column so it can be represented graphically etc
+lda_topics <- lda_out %>%
+  tidy(matrix = "beta")
+lda_topics %>% arrange(desc(beta))
+```
+```{r}
+word_probs <- lda_topics %>% group_by(topic) %>%
+  top_n(15, beta) %>% ungroup() %>%
+  mutate(term2 = fct_reorder(term, beta))
+
+ggplot(word_probs, aes(x= term2, y = beta, fill = as.factor(topic))) +
+  geom_col(show.legend = FALSE) + facet_wrap(~topic, scales = "free") + coord_flip() + labs(y ='Beta', x = 'Word')
+```
+```{r}
+#Since with k = 3, optimum appears in topic 1 and 3 and we don't want our words repeating topics, let us try with k = 4 and 2. Seemed better with 4 topics.
+
+#Based on highest probabilities in 4 topics, lets us classify them this way:
+
+#Topic 1 - Payment/Billing queries
+#Topic 2 - Internet/Subscription queries
+#Topic 3 - Access Issues
+#Topic 4 - Escalation to human agent requests
+```
+
+
